@@ -2,25 +2,22 @@ package main
 
 import (
     "fmt"
-    "golang.org/x/crypto/argon2"
-    "encoding/hex"
+    "./assn1"
 )
-
-
-// Argon2:  Automatically choses a decent combination of iterations and memory
-func Argon2Key(password []byte, salt []byte,keyLen uint32) []byte {
-	
-  return argon2.IDKey(password, salt,
-		1,
-		64*1024,
-		4,
-		keyLen)
-
-}
 
 func main() {
 	fmt.Println("Hello, 世界")
-    val1 := Argon2Key([]byte("Password"),[]byte("nosalt"),32)
-    fmt.Println(hex.EncodeToString(val1))
+    // InitUser
+	user1, err := assn1.InitUser("aniket", "password1")
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	user2, err := assn1.InitUser("ashish", "password2")
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	fmt.Println(user1, user2)
 }
 

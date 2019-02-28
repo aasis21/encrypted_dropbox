@@ -28,6 +28,7 @@ import (
 
 	// Want to import errors
 	"errors"
+	_ "fmt"
 )
 
 // This serves two purposes: It shows you some useful primitives and
@@ -73,6 +74,7 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 }
 
 type PrivateKey = userlib.PrivateKey
+var BlockSize = userlib.BlockSize
 
 type User_r struct {
 	KeyAddr   string
@@ -106,7 +108,6 @@ type SharingRecord_r struct {
 
 type SharingRecord struct {
 	Type       string
-	MainAuthor string
 	Address    []string
 	SymmKey    [][]byte
 }
@@ -134,7 +135,38 @@ type Data struct {
 
 // You can assume the user has a STRONG password
 func InitUser(username string, password string) (userdataptr *User, err error) {
-	var userdata User
+	privkey, err := userlib.GenerateRSAKey()
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
+
+	userdata := User{Username: username, Password : password , Privkey : privkey}
+	
+	crypto_key := userlib.Argon2Key([]byte(username + password),[]byte(username),16) 
+
+	userdata_byte, err := json.Marshal(userdata)
+	mac := userlib.NewHMAC(crypto_key)
+	mac.Write(userdata_byte)
+	sign := mac.Sum(nil)
+
+	dsKey := hex.EncodeToString( userlib.Argon2Key([]byte(username + password),[]byte(username),8))
+	userdata_r := User_r{KeyAddr: dsKey ,Signature : sign , User : userdata }
+
+	// push public key to key store
+	userlib.KeystoreSet(username, privkey.PublicKey)
+
+	//
+	key := crypto_key // aes key size
+	msg, _ := json.Marshal(userdata_r)
+	ciphertext := make([]byte, BlockSize+len(msg))
+	iv := ciphertext[:BlockSize]
+	copy(iv, userlib.RandomBytes(BlockSize))
+
+	cipher := userlib.CFBEncrypter(key, iv)
+	cipher.XORKeyStream(ciphertext[BlockSize:], []byte(msg))
+
+	userlib.DatastoreSet(dsKey, ciphertext)
+
 	return &userdata, err
 }
 
