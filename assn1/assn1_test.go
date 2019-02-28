@@ -70,39 +70,39 @@ func TestStorage(t *testing.T) {
 	}
 }
 
-// func TestShare(t *testing.T) {
-// 	u, err := GetUser("alice", "fubar")
-// 	if err != nil {
-// 		t.Error("Failed to reload user", err)
-// 	}
-// 	u2, err2 := InitUser("bob", "foobar")
-// 	if err2 != nil {
-// 		t.Error("Failed to initialize bob", err2)
-// 	}
+func TestShare(t *testing.T) {
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+	}
 
-// 	var v, v2 []byte
-// 	var msgid string
+	var v, v2 []byte
+	var msgid string
 
-// 	v, err = u.LoadFile("file1")
-// 	if err != nil {
-// 		t.Error("Failed to download the file from alice", err)
-// 	}
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+	}
 
-// 	msgid, err = u.ShareFile("file1", "bob")
-// 	if err != nil {
-// 		t.Error("Failed to share the a file", err)
-// 	}
-// 	err = u2.ReceiveFile("file2", "alice", msgid)
-// 	if err != nil {
-// 		t.Error("Failed to receive the share message", err)
-// 	}
+	msgid, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+	}
+	err = u2.ReceiveFile("file2", "alice", msgid)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+	}
 
-// 	v2, err = u2.LoadFile("file2")
-// 	if err != nil {
-// 		t.Error("Failed to download the file after sharing", err)
-// 	}
-// 	if !reflect.DeepEqual(v, v2) {
-// 		t.Error("Shared file is not the same", v, v2)
-// 	}
+	v2, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+	}
 
-// }
+}

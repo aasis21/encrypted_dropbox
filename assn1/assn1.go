@@ -566,20 +566,10 @@ type Message struct {
 	SymmKey      []byte
 }
 
-// This creates a sharing record, which is a key pointing to something
-// in the datastore to share with the recipient.
-
-// This enables the recipient to access the encrypted file as well
-// for reading/appending.
-
-// Note that neither the recipient NOR the datastore should gain any
-// information about what the sender calls the file.  Only the
-// recipient can access the sharing record, and only the recipient
-// should be able to know the sender.
 
 func (userdata *User) ShareFile(filename string, recipient string) ( msgid string, err error) {
 	
-	// inode
+	// get inode
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
@@ -588,41 +578,41 @@ func (userdata *User) ShareFile(filename string, recipient string) ( msgid strin
 	inode_r_b, ok := userlib.DatastoreGet(inodeAddr)
 
 	if inode_r_b == nil || ok == false {
-		return nil, errors.New("File not found")
+		return "", errors.New("File not found")
 	}
 
 	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	recipient_pubkey , ok = KeystoreGet(recipient)
-	if recipient_pubkey == nil || ok == false{
-		return nil, errors.New("Pub key not found")
+	// create message
+	recipient_pubkey , ok := userlib.KeystoreGet(recipient)
+	if ok == false{
+		return "", errors.New("Pub key not found")
 	}
 
 	message := Message{ ShRecordAddr : inode.ShRecordAddr , SymmKey : inode.SymmKey }
 	message_b, err := json.Marshal(message)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	
 	message_b_e, err := userlib.RSAEncrypt( &recipient_pubkey, message_b , []byte("Tag") )
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
+	sign, err := userlib.RSASign(userdata.Privkey, message_b_e)
 	if err != nil {
-		return nil, err 
+		return "", err 
 	}
 
 	message_r := Message_r{ Signature : sign , Message : message_b_e }
 
 	message_r_b, err := json.Marshal(message_r)
 	if err != nil {
-		fmt.Print(err) 
-		return 
+		return "", err
 	}
 	
 	message_string := hex.EncodeToString(message_r_b)
@@ -630,12 +620,81 @@ func (userdata *User) ShareFile(filename string, recipient string) ( msgid strin
 	return message_string, nil
 }
 
+
+
+
 // Note recipient's filename can be different from the sender's filename.
 // The recipient should not be able to discover the sender's view on
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
-func (userdata *User) ReceiveFile(filename string, sender string,
-	msgid string) error {
+func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
+	// verify the integrity of message
+	message_r_b , err := hex.DecodeString(msgid)
+	if err != nil {
+		return err
+	}
+
+	var message_r Message_r
+	err = json.Unmarshal(message_r_b, &message_r)
+	if err != nil {
+		return err
+	}
+
+	sender_pubkey , ok := userlib.KeystoreGet(sender)
+	if ok == false{
+		return  errors.New("Pub key not found")
+	}
+	err = userlib.RSAVerify( &sender_pubkey, message_r.Message , message_r.Signature)
+	if err != nil {
+		return err
+	}
+
+	message_b_e := message_r.Message
+	message_b, err := userlib.RSADecrypt(userdata.Privkey  , message_b_e , []byte("Tag"))
+	if err != nil{
+		return err
+	}
+
+	var message Message
+	err = json.Unmarshal(message_b, &message)
+	if err != nil {
+		return err
+	}
+	
+	// create new inode:
+
+	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
+		[]byte(userdata.Password + filename),
+		[]byte(userdata.Username + filename),
+		16))
+
+	inode := Inode{ 
+		ShRecordAddr : message.ShRecordAddr,
+		SymmKey : message.SymmKey }
+
+	inode_b, err := json.Marshal(inode)
+	if err != nil {
+		return err
+	}
+	inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
+	if err != nil { 
+		return err
+	}
+	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
+	if err != nil {
+		return err
+	}
+	inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
+	inode_r_b, err := json.Marshal(inode_r)
+	if err != nil {
+		return err
+	}
+
+	userlib.DatastoreSet(inodeAddr, inode_r_b)
+
+
+	
+	
 	return nil
 }
 
