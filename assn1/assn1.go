@@ -556,9 +556,14 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
  	return total_data, nil
 }
 
-// You may want to define what you actually want to pass as a
-// sharingRecord to serialized/deserialize in the data store.
-type sharingRecord struct {
+type Message_r struct {
+	Message []byte
+	Signature []byte
+}
+
+type Message struct {
+	ShRecordAddr string
+	SymmKey      []byte
 }
 
 // This creates a sharing record, which is a key pointing to something
@@ -572,9 +577,57 @@ type sharingRecord struct {
 // recipient can access the sharing record, and only the recipient
 // should be able to know the sender.
 
-func (userdata *User) ShareFile(filename string, recipient string) (
-	msgid string, err error) {
-	return
+func (userdata *User) ShareFile(filename string, recipient string) ( msgid string, err error) {
+	
+	// inode
+	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
+		[]byte(userdata.Password + filename),
+		[]byte(userdata.Username + filename),
+		16))
+		
+	inode_r_b, ok := userlib.DatastoreGet(inodeAddr)
+
+	if inode_r_b == nil || ok == false {
+		return nil, errors.New("File not found")
+	}
+
+	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
+	if err != nil {
+		return nil, err
+	}
+
+	recipient_pubkey , ok = KeystoreGet(recipient)
+	if recipient_pubkey == nil || ok == false{
+		return nil, errors.New("Pub key not found")
+	}
+
+	message := Message{ ShRecordAddr : inode.ShRecordAddr , SymmKey : inode.SymmKey }
+	message_b, err := json.Marshal(message)
+	if err != nil {
+		return nil, err
+	}
+	
+	message_b_e, err := userlib.RSAEncrypt( &recipient_pubkey, message_b , []byte("Tag") )
+	if err != nil {
+		return nil, err
+	}
+
+	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
+	if err != nil {
+		return nil, err 
+	}
+
+	message_r := Message_r{ Signature : sign , Message : message_b_e }
+
+	message_r_b, err := json.Marshal(message_r)
+	if err != nil {
+		fmt.Print(err) 
+		return 
+	}
+	
+	message_string := hex.EncodeToString(message_r_b)
+
+	return message_string, nil
 }
 
 // Note recipient's filename can be different from the sender's filename.
