@@ -10,8 +10,10 @@ import "reflect"
 
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
-	userlib.DebugPrint = false
+	userlib.DebugPrint = true
+//	someUsefulThings()
 
+	userlib.DebugPrint = false
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		// t.Error says the test fails
@@ -19,33 +21,6 @@ func TestInit(t *testing.T) {
 	}
 	// t.Log() only produces output if you run with "go test -v"
 	t.Log("Got user", u)
-	// You probably want many more tests here.
-}
-
-func TestGet(t *testing.T) {
-	t.Log("Initialization test")
-	userlib.DebugPrint = false
-	
-	u, err := GetUser("alice", "fubar")
-	if err != nil {
-		t.Error("Failed to get user", err)
-	}
-	t.Log("Got user", u)
-
-	u, err = GetUser("alice", "ashishshd")
-	if err == nil {
-		t.Error("Failed to check password", err)
-	}
-	t.Log("wrong password test ", u)
-	// wrong username
-	u, err = GetUser("asdflice", "ashishshd")
-	if err == nil {
-		t.Error("Failed : No error for wrong user", err)
-	}
-	t.Log("wrong username test ", u)
-
-	
-
 	// You probably want many more tests here.
 }
 
@@ -60,8 +35,8 @@ func TestStorage(t *testing.T) {
 
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
+
 	v2, err2 := u.LoadFile("file1")
-	
 	if err2 != nil {
 		t.Error("Failed to upload and download", err2)
 	}

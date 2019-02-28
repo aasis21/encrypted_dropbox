@@ -126,7 +126,7 @@ func verifySign(sign []byte, data []byte, key []byte) bool {
 	if userlib.Equal(sign, sign_obtained){
 		return true
 	}
-
+	fmt.Println("S F")
 	return false
 }
 
@@ -374,9 +374,9 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		16))
 
 	// there are two case : Exists from before or Not
-	inode_r_e, ok := userlib.DatastoreGet(inodeAddr)
+	inode_data, ok := userlib.DatastoreGet(inodeAddr)
 
-	if inode_r_e == nil || ok == false {
+	if inode_data == nil || ok == false {
 		// create new file
 	
 		// INODE
@@ -436,8 +436,45 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		
 	}else{
 		// file exists : 
-		
-		// to be done
+		inode, err := verify_and_get_inode(inodeAddr, inode_data, userdata.Privkey)
+		if err != nil {
+			return 
+		}
+
+		// sharing record
+		sr_r_e, ok := userlib.DatastoreGet(inode.ShRecordAddr)
+		if sr_r_e == nil || ok == false {
+			return 
+		}
+		sr, err := verify_and_get_sharing_record(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
+		if err != nil {
+			return  
+		}
+
+		// relocating and re encrypting whole data
+
+		addresses := sr.Address
+		for i := 0; i<len(addresses) ; i++ {
+			userlib.DatastoreDelete(addresses[i])
+		}
+
+		random_for_data := userlib.RandomBytes(48)
+		data_addr := hex.EncodeToString( random_for_data[:16] )
+		data_key := random_for_data[32:]
+
+		sr.Address = []string{data_addr}
+		sr.SymmKey = [][]byte{data_key}
+
+		err = push_sr(inode.ShRecordAddr, *sr, inode.SymmKey )
+		if err != nil {
+			return 
+		}
+	
+		// PUT data in datablock
+		err = push_data(data_addr, data, data_key)
+		if err != nil {
+			return 
+		}
 
 	}
 
