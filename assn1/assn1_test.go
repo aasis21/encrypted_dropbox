@@ -2,7 +2,7 @@ package assn1
 
 import "github.com/fenilfadadu/CS628-assn1/userlib"
 import "testing"
-import _ "reflect"
+import "reflect"
 
 // You can actually import other stuff if you want IN YOUR TEST
 // HARNESS ONLY.  Note that this is NOT considered part of your
@@ -49,26 +49,26 @@ func TestGet(t *testing.T) {
 	// You probably want many more tests here.
 }
 
-// func TestStorage(t *testing.T) {
-// 	// And some more tests, because
-// 	u, err := GetUser("alice", "fubar")
-// 	if err != nil {
-// 		t.Error("Failed to reload user", err)
-// 		return
-// 	}
-// 	t.Log("Loaded user", u)
+func TestStorage(t *testing.T) {
+	// And some more tests, because
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+		return
+	}
+	t.Log("Loaded user", u)
 
-// 	v := []byte("This is a test")
-// 	u.StoreFile("file1", v)
-
-// 	v2, err2 := u.LoadFile("file1")
-// 	if err2 != nil {
-// 		t.Error("Failed to upload and download", err2)
-// 	}
-// 	if !reflect.DeepEqual(v, v2) {
-// 		t.Error("Downloaded file is not the same", v, v2)
-// 	}
-// }
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+	v2, err2 := u.LoadFile("file1")
+	
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Downloaded file is not the same", v, v2)
+	}
+}
 
 // func TestShare(t *testing.T) {
 // 	u, err := GetUser("alice", "fubar")
