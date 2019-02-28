@@ -79,7 +79,7 @@ var BlockSize = userlib.BlockSize
 type User_r struct {
 	KeyAddr   string
 	Signature []byte
-	User
+	User []byte
 }
 
 type User struct {
@@ -91,7 +91,7 @@ type User struct {
 type Inode_r struct {
 	KeyAddr   string
 	Signature []byte
-	Inode
+	Inode []byte
 }
 
 type Inode struct {
@@ -103,7 +103,7 @@ type Inode struct {
 type SharingRecord_r struct {
 	KeyAddr   string
 	Signature []byte
-	SharingRecord
+	SharingRecord []byte
 }
 
 type SharingRecord struct {
@@ -145,19 +145,26 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	crypto_key := userlib.Argon2Key([]byte(username + password),[]byte(username),16) 
 
 	userdata_byte, err := json.Marshal(userdata)
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
+
 	mac := userlib.NewHMAC(crypto_key)
 	mac.Write(userdata_byte)
 	sign := mac.Sum(nil)
 
-	dsKey := hex.EncodeToString( userlib.Argon2Key([]byte(username + password),[]byte(username),8))
-	userdata_r := User_r{KeyAddr: dsKey ,Signature : sign , User : userdata }
+	dsKey := hex.EncodeToString( userlib.Argon2Key([]byte(username + password),[]byte(username),16))
+	userdata_r := User_r{KeyAddr: dsKey ,Signature : sign , User : userdata_byte }
 
 	// push public key to key store
 	userlib.KeystoreSet(username, privkey.PublicKey)
 
 	//
 	key := crypto_key // aes key size
-	msg, _ := json.Marshal(userdata_r)
+	msg, err := json.Marshal(userdata_r)
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
 	ciphertext := make([]byte, BlockSize+len(msg))
 	iv := ciphertext[:BlockSize]
 	copy(iv, userlib.RandomBytes(BlockSize))
@@ -170,11 +177,58 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	return &userdata, err
 }
 
+
+func verifySign(sign []byte, data []byte, key []byte) bool {
+	mac := userlib.NewHMAC(key)
+	mac.Write(data)
+	sign_obtained := mac.Sum(nil)
+
+	if userlib.Equal(sign, sign_obtained){
+		return true
+	}
+
+	return false
+}
+
+
 // This fetches the user information from the Datastore.  It should
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
-	return
+ 
+	crypto_key := userlib.Argon2Key([]byte(username + password),[]byte(username),16) 
+
+	dsKey := hex.EncodeToString( userlib.Argon2Key([]byte(username + password),[]byte(username),16))
+
+	ciphertext, ok := userlib.DatastoreGet(dsKey)
+	if ciphertext == nil || ok == false {
+		return  nil, errors.New("Data Corrupted")
+	}
+
+	cipher := userlib.CFBDecrypter(crypto_key, ciphertext[:BlockSize])
+	cipher.XORKeyStream(ciphertext[BlockSize:], ciphertext[BlockSize:])
+	
+	var userdata_r User_r
+	err = json.Unmarshal(ciphertext[BlockSize:], &userdata_r)
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
+
+	if dsKey != userdata_r.KeyAddr{
+		return nil, errors.New("Data Corrupted")
+	}
+
+	if !verifySign(userdata_r.Signature,userdata_r.User,crypto_key){
+		return nil, errors.New("Data Corrupted")
+	}
+
+	var userdata User
+	err = json.Unmarshal(userdata_r.User, &userdata)
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
+
+	return &userdata, err
 }
 
 // This stores a file in the datastore.

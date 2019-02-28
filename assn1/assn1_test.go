@@ -2,7 +2,7 @@ package assn1
 
 import "github.com/fenilfadadu/CS628-assn1/userlib"
 import "testing"
-import "reflect"
+import _ "reflect"
 
 // You can actually import other stuff if you want IN YOUR TEST
 // HARNESS ONLY.  Note that this is NOT considered part of your
@@ -10,10 +10,8 @@ import "reflect"
 
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
-	userlib.DebugPrint = true
-//	someUsefulThings()
-
 	userlib.DebugPrint = false
+
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		// t.Error says the test fails
@@ -24,60 +22,87 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
-func TestStorage(t *testing.T) {
-	// And some more tests, because
+func TestGet(t *testing.T) {
+	t.Log("Initialization test")
+	userlib.DebugPrint = false
+	
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
-		t.Error("Failed to reload user", err)
-		return
+		t.Error("Failed to get user", err)
 	}
-	t.Log("Loaded user", u)
+	t.Log("Got user", u)
 
-	v := []byte("This is a test")
-	u.StoreFile("file1", v)
+	u, err = GetUser("alice", "ashishshd")
+	if err == nil {
+		t.Error("Failed to check password", err)
+	}
+	t.Log("wrong password test ", u)
+	// wrong username
+	u, err = GetUser("asdflice", "ashishshd")
+	if err == nil {
+		t.Error("Failed : No error for wrong user", err)
+	}
+	t.Log("wrong username test ", u)
 
-	v2, err2 := u.LoadFile("file1")
-	if err2 != nil {
-		t.Error("Failed to upload and download", err2)
-	}
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Downloaded file is not the same", v, v2)
-	}
+	
+
+	// You probably want many more tests here.
 }
 
-func TestShare(t *testing.T) {
-	u, err := GetUser("alice", "fubar")
-	if err != nil {
-		t.Error("Failed to reload user", err)
-	}
-	u2, err2 := InitUser("bob", "foobar")
-	if err2 != nil {
-		t.Error("Failed to initialize bob", err2)
-	}
+// func TestStorage(t *testing.T) {
+// 	// And some more tests, because
+// 	u, err := GetUser("alice", "fubar")
+// 	if err != nil {
+// 		t.Error("Failed to reload user", err)
+// 		return
+// 	}
+// 	t.Log("Loaded user", u)
 
-	var v, v2 []byte
-	var msgid string
+// 	v := []byte("This is a test")
+// 	u.StoreFile("file1", v)
 
-	v, err = u.LoadFile("file1")
-	if err != nil {
-		t.Error("Failed to download the file from alice", err)
-	}
+// 	v2, err2 := u.LoadFile("file1")
+// 	if err2 != nil {
+// 		t.Error("Failed to upload and download", err2)
+// 	}
+// 	if !reflect.DeepEqual(v, v2) {
+// 		t.Error("Downloaded file is not the same", v, v2)
+// 	}
+// }
 
-	msgid, err = u.ShareFile("file1", "bob")
-	if err != nil {
-		t.Error("Failed to share the a file", err)
-	}
-	err = u2.ReceiveFile("file2", "alice", msgid)
-	if err != nil {
-		t.Error("Failed to receive the share message", err)
-	}
+// func TestShare(t *testing.T) {
+// 	u, err := GetUser("alice", "fubar")
+// 	if err != nil {
+// 		t.Error("Failed to reload user", err)
+// 	}
+// 	u2, err2 := InitUser("bob", "foobar")
+// 	if err2 != nil {
+// 		t.Error("Failed to initialize bob", err2)
+// 	}
 
-	v2, err = u2.LoadFile("file2")
-	if err != nil {
-		t.Error("Failed to download the file after sharing", err)
-	}
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Shared file is not the same", v, v2)
-	}
+// 	var v, v2 []byte
+// 	var msgid string
 
-}
+// 	v, err = u.LoadFile("file1")
+// 	if err != nil {
+// 		t.Error("Failed to download the file from alice", err)
+// 	}
+
+// 	msgid, err = u.ShareFile("file1", "bob")
+// 	if err != nil {
+// 		t.Error("Failed to share the a file", err)
+// 	}
+// 	err = u2.ReceiveFile("file2", "alice", msgid)
+// 	if err != nil {
+// 		t.Error("Failed to receive the share message", err)
+// 	}
+
+// 	v2, err = u2.LoadFile("file2")
+// 	if err != nil {
+// 		t.Error("Failed to download the file after sharing", err)
+// 	}
+// 	if !reflect.DeepEqual(v, v2) {
+// 		t.Error("Shared file is not the same", v, v2)
+// 	}
+
+// }
