@@ -61,6 +61,7 @@ func RandomBytes(bytes int) (data []byte) {
 }
 
 var datastore = make(map[string][]byte)
+var DataS = &datastore
 var keystore = make(map[string]rsa.PublicKey)
 
 // Sets the value in the datastore
@@ -119,7 +120,7 @@ func KeystoreGetMap() map[string]rsa.PublicKey {
 }
 
 // Generates an RSA private key by calling the crypto random function
-// and calling rsa.Generate()
+// and calling rsa.Generate() 
 func GenerateRSAKey() (*rsa.PrivateKey, error) {
 	return rsa.GenerateKey(rand.Reader, RSAKeySize)
 }
@@ -170,8 +171,7 @@ func NewSHA256() hash.Hash {
 }
 
 // Argon2:  Automatically choses a decent combination of iterations and memory
-func Argon2Key(password []byte, salt []byte,
-	keyLen uint32) []byte {
+func Argon2Key(password []byte, salt []byte, keyLen uint32) []byte {
 	return argon2.IDKey(password, salt,
 		1,
 		64*1024,
