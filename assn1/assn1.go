@@ -700,5 +700,107 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
-	return
+	// inode
+	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
+		[]byte(userdata.Password + filename),
+		[]byte(userdata.Username + filename),
+		16))
+		
+	inode_r_b, ok := userlib.DatastoreGet(inodeAddr)
+
+	if inode_r_b == nil || ok == false {
+		return errors.New("File not found")
+	}
+
+	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
+	if err != nil {
+		return err
+	}
+
+	// sharing record
+	sr_r_e, ok := userlib.DatastoreGet(inode.ShRecordAddr)
+	if sr_r_e == nil || ok == false {
+		return errors.New("Null Integrity Failed")
+	}
+	sr, err := verify_and_get_sharing_record(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
+	if err != nil {
+		return  err
+	}
+
+	// relocating and re encrypting whole data
+
+	addresses := sr.Address
+	symmKeys  := sr.SymmKey
+
+	if(len(addresses) != len(symmKeys)){
+		return errors.New("Length Integrity Failed")
+	}
+
+	new_sr := SharingRecord{ Address : []string{}, SymmKey : [][]byte{}  }
+
+	for i := 0; i<len(addresses) ; i++ {
+		data_r_e, ok := userlib.DatastoreGet(addresses[i])
+		if data_r_e == nil || ok == false {
+			return  errors.New("data null Integrity Failed")
+		}
+		data_chunk, err := verify_and_get_data(addresses[i] , data_r_e, symmKeys[i] )
+		if err != nil {
+			return  err
+		}
+
+		random_for_data := userlib.RandomBytes(48)
+		data_addr := hex.EncodeToString( random_for_data[:16] )
+		data_key := random_for_data[32:]
+
+		new_sr.Address = append(new_sr.Address, data_addr)
+		new_sr.SymmKey = append(new_sr.SymmKey, data_key)
+
+		err = push_data(data_addr, *data_chunk, data_key)
+		if err != nil {
+			return errors.New("Data PUSH Failed") 
+		}
+
+		userlib.DatastoreDelete(addresses[i])
+	}
+
+	// relocating and re encrypting sr
+	random_for_sr := userlib.RandomBytes(48)
+	sr_addr := hex.EncodeToString( random_for_sr[:16] )
+	sr_key := random_for_sr[32:]
+
+	err = push_sr(sr_addr, new_sr, sr_key )
+	if err != nil {
+		return err
+	}
+	userlib.DatastoreDelete(inode.ShRecordAddr)
+
+	// changing and updating inode
+	inode.ShRecordAddr = sr_addr
+	inode.SymmKey = sr_key
+
+	inode_b, err := json.Marshal(inode)
+	if err != nil { 
+		return err
+	}
+
+	inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
+	if err != nil {
+		return err
+	}
+
+	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
+	if err != nil {
+		return err
+	}
+
+	inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
+
+	inode_r_b, err = json.Marshal(inode_r)
+	if err != nil {
+		return err
+	}
+
+	userlib.DatastoreSet(inodeAddr, inode_r_b)
+
+	return nil
 }
