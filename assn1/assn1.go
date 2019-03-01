@@ -366,20 +366,20 @@ func push_data(data_addr string, data []byte , data_key []byte ) (err error){
 
 // Helper function : End 
 
-
+// Init and store a new file if file not exists
+// Overwrite the data if file exists from before
 func (userdata *User) StoreFile(filename string, data []byte) {
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
 		16))
 
-	// there are two case : Exists from before or Not
-	inode_data, ok := userlib.DatastoreGet(inodeAddr)
+	// There are two case : File exist or Not exists
+	inode_metadata, ok := userlib.DatastoreGet(inodeAddr)	
+	if inode_metadata == nil || ok == false {
+		// CASE 1 : File does not exist
 
-	if inode_data == nil || ok == false {
-		// create new file
-	
-		// INODE
+		// Setting up the INODE
 		random := userlib.RandomBytes(48)
 		inode := Inode{ 
 			ShRecordAddr : hex.EncodeToString(random[:32]),
@@ -387,33 +387,28 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 		inode_b, err := json.Marshal(inode)
 		if err != nil {
-			// fmt.Println(err) 
 			return 
 		}
 
 		inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
 		if err != nil {
-			// fmt.Println(err) 
 			return
 		}
 
 		sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
 		if err != nil {
-			// fmt.Print(err)
 			return 
 		}
 
 		inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
-
 		inode_r_b, err := json.Marshal(inode_r)
 		if err != nil {
-			// fmt.Print(err) 
 			return 
 		}
 
 		userlib.DatastoreSet(inodeAddr, inode_r_b)
 
-		// SHARING RECORD
+		// Setting up the SHARING RECORD
 		random_for_data := userlib.RandomBytes(48)
 		data_addr := hex.EncodeToString( random_for_data[:16] )
 		data_key := random_for_data[32:]
@@ -427,21 +422,20 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			return 
 		}
 	
-		// PUT data in datablock
+		// Setting up the DATA
 		err = push_data(data_addr, data, data_key)
 		if err != nil {
 			return 
 		}
 		
-		
 	}else{
-		// file exists : 
-		inode, err := verify_and_get_inode(inodeAddr, inode_data, userdata.Privkey)
+		// CASE 2 : File exists
+
+		// Get inode, sharingRecord, verify integrity, abort if integrity fails
+		inode, err := verify_and_get_inode(inodeAddr, inode_metadata, userdata.Privkey)
 		if err != nil {
 			return 
 		}
-
-		// sharing record
 		sr_r_e, ok := userlib.DatastoreGet(inode.ShRecordAddr)
 		if sr_r_e == nil || ok == false {
 			return 
@@ -451,26 +445,23 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			return  
 		}
 
-		// relocating and re encrypting whole data
-
+		// Deleting the previous data
 		addresses := sr.Address
 		for i := 0; i<len(addresses) ; i++ {
 			userlib.DatastoreDelete(addresses[i])
 		}
 
+		// Setting up updated Sharing Record and new data
 		random_for_data := userlib.RandomBytes(48)
 		data_addr := hex.EncodeToString( random_for_data[:16] )
 		data_key := random_for_data[32:]
 
 		sr.Address = []string{data_addr}
 		sr.SymmKey = [][]byte{data_key}
-
 		err = push_sr(inode.ShRecordAddr, *sr, inode.SymmKey )
 		if err != nil {
 			return 
 		}
-	
-		// PUT data in datablock
 		err = push_data(data_addr, data, data_key)
 		if err != nil {
 			return 
@@ -478,32 +469,30 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	}
 
+	return
 
 }
 
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	// verify integrity of inode and sharing record but not previous data;
+	// Verify integrity of Inode and SharingRecord, abort if fails
+	// Append new data and update metadata accordingly
 
-	// inode
+	// verify and get inode
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
 		16))
-
-
 	inode_r_e, ok := userlib.DatastoreGet(inodeAddr)
 	if inode_r_e == nil || ok == false {
 		return errors.New("File not found")
 	}
-
 	inode, err := verify_and_get_inode(inodeAddr, inode_r_e, userdata.Privkey)
 	if err != nil {
 		return err
 	}
 
-
-	// sharing record
+	// verify and get SharingRecord, and update it with new data address.
 	sr_r_e, ok := userlib.DatastoreGet(inode.ShRecordAddr)
 	if sr_r_e == nil || ok == false {
 		return errors.New("Integrity Failed")
@@ -516,16 +505,14 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	random_for_data := userlib.RandomBytes(48)
 	data_addr := hex.EncodeToString( random_for_data[:16] )
 	data_key := random_for_data[32:]
-
 	sr.Address = append(sr.Address, data_addr)
 	sr.SymmKey = append(sr.SymmKey, data_key)
-
 	err = push_sr(inode.ShRecordAddr, *sr, inode.SymmKey )
 	if err != nil {
 		return errors.New("Failed")
 	}
 
-	// PUT data in datablock
+	// Setting up the appended data
 	err = push_data(data_addr, data, data_key)
 	if err != nil {
 		return errors.New("Failed") 
@@ -536,24 +523,24 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
-	// inode
+	// Verify integrity of Inode, SharingRecord and data blocks, abort if fails
+	// Loads and return whole data if case of passing integrity check
+
+	// verify and get inode
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
-		16))
-		
+		16))	
 	inode_r_b, ok := userlib.DatastoreGet(inodeAddr)
-
 	if inode_r_b == nil || ok == false {
 		return nil, errors.New("File not found")
 	}
-
 	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
 	if err != nil {
 		return nil, err
 	}
 
-	// sharing record
+	// verify and get SharingRecord
 	sr_r_e, ok := userlib.DatastoreGet(inode.ShRecordAddr)
 	if sr_r_e == nil || ok == false {
 		return nil, errors.New("Null Integrity Failed")
@@ -563,15 +550,13 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		return  nil,err
 	}
 
+	// verify and get Data
 	addresses := sr.Address
 	symmKeys  := sr.SymmKey
-
 	if(len(addresses) != len(symmKeys)){
 		return  nil,errors.New("Length Integrity Failed")
 	}
-
 	var total_data []byte
-
 	for i := 0; i<len(addresses) ; i++ {
 		data_r_e, ok := userlib.DatastoreGet(addresses[i])
 		if data_r_e == nil || ok == false {
@@ -581,13 +566,11 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		if err != nil {
 			return  nil,err
 		}
-		
 		if( i == 0){
 			total_data = *data_chunk
 		}else{
 			total_data = append(total_data, *data_chunk...)
 		}
-		
 	}
 
  	return total_data, nil
