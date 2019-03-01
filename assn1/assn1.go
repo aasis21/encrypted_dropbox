@@ -75,6 +75,10 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 type PrivateKey = userlib.PrivateKey
 var BlockSize = userlib.BlockSize
 
+///////////////////////////////////////
+//           DATA STRUCTURES         //
+///////////////////////////////////////
+
 type User_r struct {
 	KeyAddr   string
 	Signature []byte
@@ -115,8 +119,10 @@ type Data_r struct {
 	Signature []byte
 }
 
-// helper function start
+// Helper functions : Start
 
+
+// This function verifies hmac sign given the key, data and sign.
 func verifySign(sign []byte, data []byte, key []byte) bool {
 	mac := userlib.NewHMAC(key)
 	mac.Write(data)
@@ -125,19 +131,21 @@ func verifySign(sign []byte, data []byte, key []byte) bool {
 	if userlib.Equal(sign, sign_obtained){
 		return true
 	}
-	// fmt.Println("S F")
+
 	return false
 }
 
-func hmac_sign(key []byte, data []byte) []byte{
+// This function sign the data using hmac given the key and data.
+func hmacSign(key []byte, data []byte) []byte{
 	mac := userlib.NewHMAC(key)
 	mac.Write(data)
 	sign := mac.Sum(nil)
 	return sign
 }
 
-
-func cfb_encrypt(key []byte, data []byte) [] byte{
+// This function encryptes the data using cfb mode given the key and data.
+// And returns the encrypted bytes.
+func cfbEncrypt(key []byte, data []byte) [] byte{
 	data_e := make( []byte, BlockSize + len(data) )
 	iv := data_e[:BlockSize]
 	copy(iv, userlib.RandomBytes(BlockSize))
@@ -148,69 +156,74 @@ func cfb_encrypt(key []byte, data []byte) [] byte{
 
 }
 
-// helper function end 
+// Helper functions : End
 
 
+// create new user and return User struct and error if any.
 func InitUser(username string, password string) (userdataptr *User, err error) {
+	
+	// generate rsa key for new user
 	privkey, err := userlib.GenerateRSAKey()
 	if err != nil {
 		return nil, err
 	}
 
-	user := User{Username: username, Password : password , Privkey : privkey}
 	// push public key to key store
 	userlib.KeystoreSet(username, privkey.PublicKey)
+	// make user struct
+	user := User{Username: username, Password : password , Privkey : privkey}
 
+	// get the address where user data to be saved, and the symKey for encryption
 	user_key := userlib.Argon2Key([]byte(username + password),[]byte(username),16) 
 	user_addr := hex.EncodeToString( userlib.Argon2Key([]byte(username + password),[]byte(username),32))
+
+	// sign, encrypt, store the data in appropriate format on datastore 
 	user_b, err := json.Marshal(user)
 	if err != nil {
 		return nil, err
 	}
-	sign := hmac_sign(user_key, user_b)
+	sign := hmacSign(user_key, user_b)
 	user_r := User_r{KeyAddr: user_addr ,Signature : sign , User : user_b }
 
 	user_r_b, err := json.Marshal(user_r)
 	if err != nil {
 		return nil, err
 	}
-	user_r_e  := cfb_encrypt(user_key, user_r_b)
+	user_r_e  := cfbEncrypt(user_key, user_r_b)
 	userlib.DatastoreSet(user_addr, user_r_e)
 
 	return &user, err
 }
 
 
-
 func GetUser(username string, password string) (userdataptr *User, err error) {
- 
+
+	// get the datastore address of userdata , and the crypto symKey 
 	user_key := userlib.Argon2Key([]byte(username + password),[]byte(username),16) 
-
 	user_addr := hex.EncodeToString( userlib.Argon2Key([]byte(username + password),[]byte(username),32))
-
+	
+	//check whether the user data exists or not
 	user_r_e, ok := userlib.DatastoreGet(user_addr)
 	if user_r_e == nil || ok == false {
 		return  nil, errors.New("No User Data")
 	}
 
+	// decrypt, check sign and address_key(swap attack) and get the user Struct
+	// returns error in case of any tampering
 	cipher := userlib.CFBDecrypter(user_key, user_r_e[:BlockSize])
 	cipher.XORKeyStream(user_r_e[BlockSize:], user_r_e[BlockSize:])
-	
 	var user_r User_r
 	err = json.Unmarshal(user_r_e[BlockSize:], &user_r)
 	if err != nil {
 		return nil, err
 	}
-
 	// check swap attack
 	if user_addr != user_r.KeyAddr{
 		return nil, err
 	}
-
 	if !verifySign(user_r.Signature,user_r.User, user_key){
 		return nil, errors.New("SIGN FAILED")
 	}
-
 	var user User
 	err = json.Unmarshal(user_r.User, &user)
 	if err != nil {
@@ -220,35 +233,31 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return &user, err
 }
 
-// helper function start
+// Helper function : Start
 
+// This function takes the inode address, Inode_r byte and private key of user
+// check the integrity of data and finally return the Inode structure and error if fails 
+func verify_and_get_inode(inode_addr string, inode_r_b []byte, privkey *PrivateKey)(inode *Inode, err error){
 
-func verify_and_get_inode(dsKey string, inode_r_b []byte, privkey *PrivateKey)(inode *Inode, err error){
-
+	// check swap attack, check sign, decrypt and unmarshal inode
 	var inode_r Inode_r
 	err = json.Unmarshal(inode_r_b, &inode_r)
 	if err != nil {
 		return nil, err
 	}
-
-	// check swap attack
-	if(inode_r.KeyAddr != dsKey){
+	if(inode_r.KeyAddr != inode_addr){
+		// check swap attack
 		return nil, errors.New("Key Swap Attack")
 	}
-
 	err = userlib.RSAVerify( &privkey.PublicKey, inode_r.Inode , inode_r.Signature)
 	if err != nil {
 		return nil, err
 	}
-
 	inode_b_e := inode_r.Inode
-
 	inode_b, err := userlib.RSADecrypt(privkey  , inode_b_e , []byte("Tag"))
 	if err != nil{
 		return nil, err
 	}
-
-	//fmt.Println(inode_b)
 	var inode_ Inode
 	err = json.Unmarshal(inode_b, &inode_)
 	if err != nil {
@@ -256,31 +265,27 @@ func verify_and_get_inode(dsKey string, inode_r_b []byte, privkey *PrivateKey)(i
 	}
 
 	return &inode_, nil
-
 }
 
-
+// This function takes the sharingRecord address, SharingRecord_r_encrypted byte and symkey
+// check the integrity of sharingRecord and finally return the SharingRecord structure and error if fails 
 func verify_and_get_sharing_record(sharingRecordAddr string, sr_r_e []byte, sr_key []byte )( sr *SharingRecord, err error){
 
-
+	// decrypt, check swap attack and check sign
 	cipher := userlib.CFBDecrypter(sr_key, sr_r_e[:BlockSize])
 	cipher.XORKeyStream(sr_r_e[BlockSize:], sr_r_e[BlockSize:])
-	
 	var sr_r SharingRecord_r
 	err = json.Unmarshal(sr_r_e[BlockSize:], &sr_r)
 	if err != nil {
 		return nil, err
 	}
-
-	// check swap attack
 	if sharingRecordAddr != sr_r.KeyAddr{
+		// check swap attack
 		return nil, err
 	}
-
 	if !verifySign(sr_r.Signature,sr_r.SharingRecord,sr_key){
 		return nil, errors.New("SIGN FAILED")
 	}
-
 	var sr_ SharingRecord
 	err = json.Unmarshal(sr_r.SharingRecord, &sr_)
 	if err != nil {
@@ -288,65 +293,61 @@ func verify_and_get_sharing_record(sharingRecordAddr string, sr_r_e []byte, sr_k
 	}
 
 	return &sr_, nil
-
 }
 
-
+// This function takes the Data address, Data_r_encrypted byte and symkey
+// check the integrity of Data and finally return the Data structure and error if fails 
 func verify_and_get_data(data_addr string, data_r_e []byte, data_key []byte )( data *[]byte, err error){
 
-
+	// decrypt, check swap attack and check sign
 	cipher := userlib.CFBDecrypter(data_key, data_r_e[:BlockSize])
-	cipher.XORKeyStream(data_r_e[BlockSize:], data_r_e[BlockSize:])
-	
+	cipher.XORKeyStream(data_r_e[BlockSize:], data_r_e[BlockSize:])	
 	var data_r Data_r
 	err = json.Unmarshal(data_r_e[BlockSize:], &data_r)
 	if err != nil {
 		return nil, err
 	}
-
-	// check swap attack
 	if data_addr != data_r.KeyAddr{
+		// check swap attack
 		return nil, err
 	}
-
 	if !verifySign(data_r.Signature,data_r.Data,data_key){
 		return nil, errors.New("Data sign check failed")
 	}
-	
-	return &data_r.Data, nil
 
+	return &data_r.Data, nil
 }
 
 
-
+// This function signs and encrypt the sharingRecord and 
+// push the SharingRecord to required key on datastore
 func push_sr(sr_addr string, sr SharingRecord, sr_key []byte ) (err error) {
+
+	// sign, encrypt and push the sharingrecord to datastore
 	sr_b, err := json.Marshal(sr)
 		if err != nil {
 			return 
 		}
-	sr_sign := hmac_sign(sr_key , sr_b)
-
+	sr_sign := hmacSign(sr_key , sr_b)
 	sr_r := SharingRecord_r{
 		KeyAddr : sr_addr,
 		Signature : sr_sign,
 		SharingRecord : sr_b }
-
 	sr_r_b, err := json.Marshal(sr_r)
 	if err != nil {
 		return errors.New("Failed") 
 	}
-
-	sr_r_e := cfb_encrypt(sr_key, sr_r_b)	
+	sr_r_e := cfbEncrypt(sr_key, sr_r_b)	
 	userlib.DatastoreSet(sr_addr, sr_r_e )
 
 	return nil
-
 }
 
-
+// This function signs and encrypt the Data and 
+// push the Data to required key on datastore
 func push_data(data_addr string, data []byte , data_key []byte ) (err error){
-	data_sign := hmac_sign(data_key, data)
-
+	
+	data_sign := hmacSign(data_key, data)
 	data_r := Data_r{
 		KeyAddr : data_addr,
 		Data : data,
@@ -356,14 +357,14 @@ func push_data(data_addr string, data []byte , data_key []byte ) (err error){
 	if err != nil {
 		return errors.New("Failed") 
 	}
-
-	data_r_b_e := cfb_encrypt(data_key, data_r_b)
+	data_r_b_e := cfbEncrypt(data_key, data_r_b)
 	userlib.DatastoreSet(data_addr, data_r_b_e )
+	
 	return nil
 
 }
 
-// helper function end 
+// Helper function : End 
 
 
 func (userdata *User) StoreFile(filename string, data []byte) {
