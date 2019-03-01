@@ -557,7 +557,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		return  nil,errors.New("Length Integrity Failed")
 	}
 	var total_data []byte
-	for i := 0; i<len(addresses) ; i++ {
+	for i := 0; i < len(addresses) ; i++ {
 		data_r_e, ok := userlib.DatastoreGet(addresses[i])
 		if data_r_e == nil || ok == false {
 			return nil, errors.New("data null Integrity Failed")
@@ -732,7 +732,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	}
 
 	new_sr := SharingRecord{ Address : []string{}, SymmKey : [][]byte{}  }
-	for i := 0; i<len(addresses) ; i++ {
+	for i := 0; i < len(addresses) ; i++ {
 		data_r_e, ok := userlib.DatastoreGet(addresses[i])
 		if data_r_e == nil || ok == false {
 			return  errors.New("data null Integrity Failed")
