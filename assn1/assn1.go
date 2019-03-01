@@ -7,7 +7,7 @@ import (
 
 	// You neet to add with
 	// go get github.com/fenilfadadu/CS628-assn1/userlib
-	"../userlib"
+	"github.com/fenilfadadu/CS628-assn1/userlib"
 
 	// Life is much easier with json:  You are
 	// going to want to use this so you can easily
@@ -28,7 +28,6 @@ import (
 
 	// Want to import errors
 	"errors"
-	"fmt"
 )
 
 // This serves two purposes: It shows you some useful primitives and
@@ -126,7 +125,7 @@ func verifySign(sign []byte, data []byte, key []byte) bool {
 	if userlib.Equal(sign, sign_obtained){
 		return true
 	}
-	fmt.Println("S F")
+	// fmt.Println("S F")
 	return false
 }
 
@@ -387,19 +386,19 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 		inode_b, err := json.Marshal(inode)
 		if err != nil {
-			fmt.Println(err) 
+			// fmt.Println(err) 
 			return 
 		}
 
 		inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
 		if err != nil {
-			fmt.Println(err) 
+			// fmt.Println(err) 
 			return
 		}
 
 		sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
 		if err != nil {
-			fmt.Print(err)
+			// fmt.Print(err)
 			return 
 		}
 
@@ -407,7 +406,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 		inode_r_b, err := json.Marshal(inode_r)
 		if err != nil {
-			fmt.Print(err) 
+			// fmt.Print(err) 
 			return 
 		}
 
