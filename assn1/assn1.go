@@ -447,7 +447,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 		// Deleting the previous data
 		addresses := sr.Address
-		for i := 0; i<len(addresses) ; i++ {
+		for i := 0; i < len(addresses); i++ {
 			userlib.DatastoreDelete(addresses[i])
 		}
 
@@ -473,7 +473,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 }
 
-
+// Append new data to existing file
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// Verify integrity of Inode and SharingRecord, abort if fails
 	// Append new data and update metadata accordingly
@@ -521,7 +521,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	return nil
 }
 
-
+// Load existing file if file is not tampered
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// Verify integrity of Inode, SharingRecord and data blocks, abort if fails
 	// Loads and return whole data if case of passing integrity check
@@ -576,6 +576,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
  	return total_data, nil
 }
 
+// DATA Structure for sharingRecord Message
 type Message_r struct {
 	Message []byte
 	Signature []byte
@@ -586,27 +587,26 @@ type Message struct {
 	SymmKey      []byte
 }
 
-
+// create a secure message to be shared with recipient
 func (userdata *User) ShareFile(filename string, recipient string) ( msgid string, err error) {
 	
-	// get inode
+	// Get inode data for file to be shared along verification of inode data
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
 		16))
 		
 	inode_r_b, ok := userlib.DatastoreGet(inodeAddr)
-
 	if inode_r_b == nil || ok == false {
 		return "", errors.New("File not found")
 	}
-
 	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
 	if err != nil {
 		return "", err
 	}
 
-	// create message
+	// create secure message string, encrypt with recipient public key,
+	// sign the message with user private key
 	recipient_pubkey , ok := userlib.KeystoreGet(recipient)
 	if ok == false{
 		return "", errors.New("Pub key not found")
@@ -617,49 +617,37 @@ func (userdata *User) ShareFile(filename string, recipient string) ( msgid strin
 	if err != nil {
 		return "", err
 	}
-	
 	message_b_e, err := userlib.RSAEncrypt( &recipient_pubkey, message_b , []byte("Tag") )
 	if err != nil {
 		return "", err
 	}
-
 	sign, err := userlib.RSASign(userdata.Privkey, message_b_e)
 	if err != nil {
 		return "", err 
 	}
-
 	message_r := Message_r{ Signature : sign , Message : message_b_e }
-
 	message_r_b, err := json.Marshal(message_r)
 	if err != nil {
 		return "", err
 	}
-	
 	message_string := hex.EncodeToString(message_r_b)
 
 	return message_string, nil
 }
 
-
-
-
-// Note recipient's filename can be different from the sender's filename.
-// The recipient should not be able to discover the sender's view on
-// what the filename even is!  However, the recipient must ensure that
-// it is authentically from the sender.
+// Using sender message to create new file inode and link to same sharing record
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
-	// verify the integrity of message
+
+	// verify the sign of message using sender pubkey and decrypt using user privkey
 	message_r_b , err := hex.DecodeString(msgid)
 	if err != nil {
 		return err
 	}
-
 	var message_r Message_r
 	err = json.Unmarshal(message_r_b, &message_r)
 	if err != nil {
 		return err
 	}
-
 	sender_pubkey , ok := userlib.KeystoreGet(sender)
 	if ok == false{
 		return  errors.New("Pub key not found")
@@ -668,30 +656,25 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	if err != nil {
 		return err
 	}
-
 	message_b_e := message_r.Message
 	message_b, err := userlib.RSADecrypt(userdata.Privkey  , message_b_e , []byte("Tag"))
 	if err != nil{
 		return err
 	}
-
 	var message Message
 	err = json.Unmarshal(message_b, &message)
 	if err != nil {
 		return err
 	}
 	
-	// create new inode:
-
+	// create new inode and link to same file SharingRecord:
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
 		16))
-
 	inode := Inode{ 
 		ShRecordAddr : message.ShRecordAddr,
 		SymmKey : message.SymmKey }
-
 	inode_b, err := json.Marshal(inode)
 	if err != nil {
 		return err
@@ -709,35 +692,29 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	if err != nil {
 		return err
 	}
-
 	userlib.DatastoreSet(inodeAddr, inode_r_b)
 
-
-	
-	
 	return nil
 }
 
-// Removes access for all others.
+// Removes access for all other users except the caller
 func (userdata *User) RevokeFile(filename string) (err error) {
-	// inode
+
+	// verify and get inode
 	inodeAddr := hex.EncodeToString( userlib.Argon2Key(
 		[]byte(userdata.Password + filename),
 		[]byte(userdata.Username + filename),
-		16))
-		
+		16))		
 	inode_r_b, ok := userlib.DatastoreGet(inodeAddr)
-
 	if inode_r_b == nil || ok == false {
 		return errors.New("File not found")
 	}
-
 	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
 	if err != nil {
 		return err
 	}
 
-	// sharing record
+	// verify and get sharing record
 	sr_r_e, ok := userlib.DatastoreGet(inode.ShRecordAddr)
 	if sr_r_e == nil || ok == false {
 		return errors.New("Null Integrity Failed")
@@ -748,16 +725,13 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	}
 
 	// relocating and re encrypting whole data
-
 	addresses := sr.Address
 	symmKeys  := sr.SymmKey
-
 	if(len(addresses) != len(symmKeys)){
 		return errors.New("Length Integrity Failed")
 	}
 
 	new_sr := SharingRecord{ Address : []string{}, SymmKey : [][]byte{}  }
-
 	for i := 0; i<len(addresses) ; i++ {
 		data_r_e, ok := userlib.DatastoreGet(addresses[i])
 		if data_r_e == nil || ok == false {
@@ -771,19 +745,16 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 		random_for_data := userlib.RandomBytes(48)
 		data_addr := hex.EncodeToString( random_for_data[:16] )
 		data_key := random_for_data[32:]
-
 		new_sr.Address = append(new_sr.Address, data_addr)
 		new_sr.SymmKey = append(new_sr.SymmKey, data_key)
-
 		err = push_data(data_addr, *data_chunk, data_key)
 		if err != nil {
 			return errors.New("Data PUSH Failed") 
 		}
-
 		userlib.DatastoreDelete(addresses[i])
 	}
 
-	// relocating and re encrypting sr
+	// relocating and re encrypting sharing record
 	random_for_sr := userlib.RandomBytes(48)
 	sr_addr := hex.EncodeToString( random_for_sr[:16] )
 	sr_key := random_for_sr[32:]
@@ -794,32 +765,26 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	}
 	userlib.DatastoreDelete(inode.ShRecordAddr)
 
-	// changing and updating inode
+	// changing and updating Inode
 	inode.ShRecordAddr = sr_addr
 	inode.SymmKey = sr_key
-
 	inode_b, err := json.Marshal(inode)
 	if err != nil { 
 		return err
 	}
-
 	inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
 	if err != nil {
 		return err
 	}
-
 	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
 	if err != nil {
 		return err
 	}
-
 	inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
-
 	inode_r_b, err = json.Marshal(inode_r)
 	if err != nil {
 		return err
 	}
-
 	userlib.DatastoreSet(inodeAddr, inode_r_b)
 
 	return nil
