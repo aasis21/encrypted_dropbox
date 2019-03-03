@@ -239,7 +239,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 // This function takes the inode address, Inode_r_encrypted byte and symkey
 // check the integrity of inode and finally return the Inode structure and error if fails 
-func verify_and_get_inode(inode_addr string, inode_r_e []byte, inode_key []byte )( inode *Inode, err error){
+func verifyAndGetInode(inode_addr string, inode_r_e []byte, inode_key []byte )( inode *Inode, err error){
 
 	// decrypt, check swap attack and check sign
 	cipher := userlib.CFBDecrypter(inode_key, inode_r_e[:BlockSize])
@@ -267,7 +267,7 @@ func verify_and_get_inode(inode_addr string, inode_r_e []byte, inode_key []byte 
 
 // This function takes the sharingRecord address, SharingRecord_r_encrypted byte and symkey
 // check the integrity of sharingRecord and finally return the SharingRecord structure and error if fails 
-func verify_and_get_sharing_record(sharingRecordAddr string, sr_r_e []byte, sr_key []byte )( sr *SharingRecord, err error){
+func verifyAndGetSharingRecord(sharingRecordAddr string, sr_r_e []byte, sr_key []byte )( sr *SharingRecord, err error){
 
 	// decrypt, check swap attack and check sign
 	cipher := userlib.CFBDecrypter(sr_key, sr_r_e[:BlockSize])
@@ -295,7 +295,7 @@ func verify_and_get_sharing_record(sharingRecordAddr string, sr_r_e []byte, sr_k
 
 // This function takes the Data address, Data_r_encrypted byte and symkey
 // check the integrity of Data and finally return the Data structure and error if fails 
-func verify_and_get_data(data_addr string, data_r_e []byte, data_key []byte )( data *[]byte, err error){
+func verifyAndGetData(data_addr string, data_r_e []byte, data_key []byte )( data *[]byte, err error){
 
 	// decrypt, check swap attack and check sign
 	cipher := userlib.CFBDecrypter(data_key, data_r_e[:BlockSize])
@@ -319,7 +319,7 @@ func verify_and_get_data(data_addr string, data_r_e []byte, data_key []byte )( d
 
 // This function signs and encrypt the sharingRecord and 
 // push the SharingRecord to required key on datastore
-func push_inode(inode_addr string, inode Inode, inode_key []byte ) (err error) {
+func pushInode(inode_addr string, inode Inode, inode_key []byte ) (err error) {
 
 	// sign, encrypt and push the sharingrecord to datastore
 	inode_b, err := json.Marshal(inode)
@@ -343,7 +343,7 @@ func push_inode(inode_addr string, inode Inode, inode_key []byte ) (err error) {
 
 // This function signs and encrypt the sharingRecord and 
 // push the SharingRecord to required key on datastore
-func push_sr(sr_addr string, sr SharingRecord, sr_key []byte ) (err error) {
+func pushSharingRecord(sr_addr string, sr SharingRecord, sr_key []byte ) (err error) {
 
 	// sign, encrypt and push the sharingrecord to datastore
 	sr_b, err := json.Marshal(sr)
@@ -367,7 +367,7 @@ func push_sr(sr_addr string, sr SharingRecord, sr_key []byte ) (err error) {
 
 // This function signs and encrypt the Data and 
 // push the Data to required key on datastore
-func push_data(data_addr string, data []byte , data_key []byte ) (err error){
+func pushData(data_addr string, data []byte , data_key []byte ) (err error){
 	
 	data_sign := hmacSign(data_key, data)
 	data_r := Data_r{
@@ -407,7 +407,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			ShRecordAddr : hex.EncodeToString(random[:32]),
 			SymmKey : random[32:] }
 
-		err := push_inode(inodeAddr, inode, userdata.SymmKey )
+		err := pushInode(inodeAddr, inode, userdata.SymmKey )
 		if err != nil {
 			return 
 		}	
@@ -421,13 +421,13 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			Address : []string{data_addr},
 			SymmKey : [][]byte{data_key}  }
 
-		err = push_sr(inode.ShRecordAddr, sr, inode.SymmKey )
+		err = pushSharingRecord(inode.ShRecordAddr, sr, inode.SymmKey )
 		if err != nil {
 			return 
 		}
 	
 		// Setting up the DATA
-		err = push_data(data_addr, data, data_key)
+		err = pushData(data_addr, data, data_key)
 		if err != nil {
 			return 
 		}
@@ -436,7 +436,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		// CASE 2 : File exists
 
 		// Get inode, sharingRecord, verify integrity, abort if integrity fails
-		inode, err := verify_and_get_inode(inodeAddr, inode_metadata, userdata.SymmKey)
+		inode, err := verifyAndGetInode(inodeAddr, inode_metadata, userdata.SymmKey)
 		if err != nil {
 			return 
 		}
@@ -444,7 +444,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		if sr_r_e == nil || ok == false {
 			return 
 		}
-		sr, err := verify_and_get_sharing_record(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
+		sr, err := verifyAndGetSharingRecord(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
 		if err != nil {
 			return  
 		}
@@ -462,11 +462,11 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 		sr.Address = []string{data_addr}
 		sr.SymmKey = [][]byte{data_key}
-		err = push_sr(inode.ShRecordAddr, *sr, inode.SymmKey )
+		err = pushSharingRecord(inode.ShRecordAddr, *sr, inode.SymmKey )
 		if err != nil {
 			return 
 		}
-		err = push_data(data_addr, data, data_key)
+		err = pushData(data_addr, data, data_key)
 		if err != nil {
 			return 
 		}
@@ -491,7 +491,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	if inode_r_e == nil || ok == false {
 		return errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_e, userdata.SymmKey)
+	inode, err := verifyAndGetInode(inodeAddr, inode_r_e, userdata.SymmKey)
 	if err != nil {
 		return err
 	}
@@ -501,7 +501,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	if sr_r_e == nil || ok == false {
 		return errors.New("Integrity Failed")
 	}
-	sr, err := verify_and_get_sharing_record(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
+	sr, err := verifyAndGetSharingRecord(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
 	if err != nil {
 		return err
 	}
@@ -511,13 +511,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	data_key := random_for_data[32:]
 	sr.Address = append(sr.Address, data_addr)
 	sr.SymmKey = append(sr.SymmKey, data_key)
-	err = push_sr(inode.ShRecordAddr, *sr, inode.SymmKey )
+	err = pushSharingRecord(inode.ShRecordAddr, *sr, inode.SymmKey )
 	if err != nil {
 		return errors.New("Failed")
 	}
 
 	// Setting up the appended data
-	err = push_data(data_addr, data, data_key)
+	err = pushData(data_addr, data, data_key)
 	if err != nil {
 		return errors.New("Failed") 
 	}
@@ -539,7 +539,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	if inode_r_b == nil || ok == false {
 		return nil, errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.SymmKey)
+	inode, err := verifyAndGetInode(inodeAddr, inode_r_b, userdata.SymmKey)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +549,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	if sr_r_e == nil || ok == false {
 		return nil, errors.New("Null Integrity Failed")
 	}
-	sr, err := verify_and_get_sharing_record(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
+	sr, err := verifyAndGetSharingRecord(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
 	if err != nil {
 		return  nil,err
 	}
@@ -566,7 +566,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		if data_r_e == nil || ok == false {
 			return nil, errors.New("data null Integrity Failed")
 		}
-		data_chunk, err := verify_and_get_data(addresses[i] , data_r_e, symmKeys[i] )
+		data_chunk, err := verifyAndGetData(addresses[i] , data_r_e, symmKeys[i] )
 		if err != nil {
 			return  nil,err
 		}
@@ -604,7 +604,7 @@ func (userdata *User) ShareFile(filename string, recipient string) ( msgid strin
 	if inode_r_b == nil || ok == false {
 		return "", errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.SymmKey)
+	inode, err := verifyAndGetInode(inodeAddr, inode_r_b, userdata.SymmKey)
 	if err != nil {
 		return "", err
 	}
@@ -680,7 +680,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 		ShRecordAddr : message.ShRecordAddr,
 		SymmKey : message.SymmKey }
 
-	err = push_inode(inodeAddr, inode, userdata.SymmKey )
+	err = pushInode(inodeAddr, inode, userdata.SymmKey )
 	if err != nil {
 		return err
 	}
@@ -700,7 +700,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	if inode_r_b == nil || ok == false {
 		return errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.SymmKey)
+	inode, err := verifyAndGetInode(inodeAddr, inode_r_b, userdata.SymmKey)
 	if err != nil {
 		return err
 	}
@@ -710,7 +710,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	if sr_r_e == nil || ok == false {
 		return errors.New("Null Integrity Failed")
 	}
-	sr, err := verify_and_get_sharing_record(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
+	sr, err := verifyAndGetSharingRecord(inode.ShRecordAddr , sr_r_e, inode.SymmKey )
 	if err != nil {
 		return  err
 	}
@@ -728,7 +728,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 		if data_r_e == nil || ok == false {
 			return  errors.New("data null Integrity Failed")
 		}
-		data_chunk, err := verify_and_get_data(addresses[i] , data_r_e, symmKeys[i] )
+		data_chunk, err := verifyAndGetData(addresses[i] , data_r_e, symmKeys[i] )
 		if err != nil {
 			return  err
 		}
@@ -738,7 +738,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 		data_key := random_for_data[32:]
 		new_sr.Address = append(new_sr.Address, data_addr)
 		new_sr.SymmKey = append(new_sr.SymmKey, data_key)
-		err = push_data(data_addr, *data_chunk, data_key)
+		err = pushData(data_addr, *data_chunk, data_key)
 		if err != nil {
 			return errors.New("Data PUSH Failed") 
 		}
@@ -750,7 +750,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	sr_addr := hex.EncodeToString( random_for_sr[:16] )
 	sr_key := random_for_sr[32:]
 
-	err = push_sr(sr_addr, new_sr, sr_key )
+	err = pushSharingRecord(sr_addr, new_sr, sr_key )
 	if err != nil {
 		return err
 	}
@@ -759,7 +759,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	// changing and updating Inode
 	inode.ShRecordAddr = sr_addr
 	inode.SymmKey = sr_key
-	err = push_inode(inodeAddr, *inode, userdata.SymmKey )
+	err = pushInode(inodeAddr, *inode, userdata.SymmKey )
 	if err != nil {
 			return 
 	}	
