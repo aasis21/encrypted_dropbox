@@ -88,6 +88,7 @@ type User_r struct {
 type User struct {
 	Username string
 	Password string
+	SymmKey  []byte
 	Privkey  *PrivateKey
 }
 
@@ -167,11 +168,12 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	if err != nil {
 		return nil, err
 	}
-
 	// push public key to key store
 	userlib.KeystoreSet(username, privkey.PublicKey)
+	// symkey for inode encryption
+	symm_key := userlib.RandomBytes(16)
 	// make user struct
-	user := User{Username: username, Password : password , Privkey : privkey}
+	user := User{Username: username, Password : password ,SymmKey : symm_key, Privkey : privkey}
 
 	// get the address where user data to be saved, and the symKey for encryption
 	user_key := userlib.Argon2Key([]byte(username + password),[]byte(username),16) 
@@ -235,31 +237,27 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 // Helper function : Start
 
-// This function takes the inode address, Inode_r byte and private key of user
-// check the integrity of data and finally return the Inode structure and error if fails 
-func verify_and_get_inode(inode_addr string, inode_r_b []byte, privkey *PrivateKey)(inode *Inode, err error){
+// This function takes the inode address, Inode_r_encrypted byte and symkey
+// check the integrity of inode and finally return the Inode structure and error if fails 
+func verify_and_get_inode(inode_addr string, inode_r_e []byte, inode_key []byte )( inode *Inode, err error){
 
-	// check swap attack, check sign, decrypt and unmarshal inode
+	// decrypt, check swap attack and check sign
+	cipher := userlib.CFBDecrypter(inode_key, inode_r_e[:BlockSize])
+	cipher.XORKeyStream(inode_r_e[BlockSize:], inode_r_e[BlockSize:])
 	var inode_r Inode_r
-	err = json.Unmarshal(inode_r_b, &inode_r)
+	err = json.Unmarshal(inode_r_e[BlockSize:], &inode_r)
 	if err != nil {
 		return nil, err
 	}
-	if(inode_r.KeyAddr != inode_addr){
+	if inode_addr != inode_r.KeyAddr{
 		// check swap attack
-		return nil, errors.New("Key Swap Attack")
+		return nil, errors.New("Swap attack")
 	}
-	err = userlib.RSAVerify( &privkey.PublicKey, inode_r.Inode , inode_r.Signature)
-	if err != nil {
-		return nil, err
-	}
-	inode_b_e := inode_r.Inode
-	inode_b, err := userlib.RSADecrypt(privkey  , inode_b_e , []byte("Tag"))
-	if err != nil{
-		return nil, err
+	if !verifySign(inode_r.Signature,inode_r.Inode,inode_key){
+		return nil, errors.New("SIGN FAILED")
 	}
 	var inode_ Inode
-	err = json.Unmarshal(inode_b, &inode_)
+	err = json.Unmarshal(inode_r.Inode, &inode_)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +279,7 @@ func verify_and_get_sharing_record(sharingRecordAddr string, sr_r_e []byte, sr_k
 	}
 	if sharingRecordAddr != sr_r.KeyAddr{
 		// check swap attack
-		return nil, err
+		return nil, errors.New("Swap attack")
 	}
 	if !verifySign(sr_r.Signature,sr_r.SharingRecord,sr_key){
 		return nil, errors.New("SIGN FAILED")
@@ -309,7 +307,7 @@ func verify_and_get_data(data_addr string, data_r_e []byte, data_key []byte )( d
 	}
 	if data_addr != data_r.KeyAddr{
 		// check swap attack
-		return nil, err
+		return nil, errors.New("Swap attack")
 	}
 	if !verifySign(data_r.Signature,data_r.Data,data_key){
 		return nil, errors.New("Data sign check failed")
@@ -318,6 +316,30 @@ func verify_and_get_data(data_addr string, data_r_e []byte, data_key []byte )( d
 	return &data_r.Data, nil
 }
 
+
+// This function signs and encrypt the sharingRecord and 
+// push the SharingRecord to required key on datastore
+func push_inode(inode_addr string, inode Inode, inode_key []byte ) (err error) {
+
+	// sign, encrypt and push the sharingrecord to datastore
+	inode_b, err := json.Marshal(inode)
+		if err != nil {
+			return 
+		}
+	inode_sign := hmacSign(inode_key , inode_b)
+	inode_r := Inode_r{
+		KeyAddr : inode_addr,
+		Signature : inode_sign,
+		Inode : inode_b }
+	inode_r_b, err := json.Marshal(inode_r)
+	if err != nil {
+		return errors.New("Failed") 
+	}
+	inode_r_e := cfbEncrypt(inode_key, inode_r_b)	
+	userlib.DatastoreSet(inode_addr, inode_r_e )
+
+	return nil
+}
 
 // This function signs and encrypt the sharingRecord and 
 // push the SharingRecord to required key on datastore
@@ -385,29 +407,11 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			ShRecordAddr : hex.EncodeToString(random[:32]),
 			SymmKey : random[32:] }
 
-		inode_b, err := json.Marshal(inode)
+		err := push_inode(inodeAddr, inode, userdata.SymmKey )
 		if err != nil {
 			return 
-		}
-
-		inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
-		if err != nil {
-			return
-		}
-
-		sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
-		if err != nil {
-			return 
-		}
-
-		inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
-		inode_r_b, err := json.Marshal(inode_r)
-		if err != nil {
-			return 
-		}
-
-		userlib.DatastoreSet(inodeAddr, inode_r_b)
-
+		}	
+		
 		// Setting up the SHARING RECORD
 		random_for_data := userlib.RandomBytes(48)
 		data_addr := hex.EncodeToString( random_for_data[:16] )
@@ -432,7 +436,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		// CASE 2 : File exists
 
 		// Get inode, sharingRecord, verify integrity, abort if integrity fails
-		inode, err := verify_and_get_inode(inodeAddr, inode_metadata, userdata.Privkey)
+		inode, err := verify_and_get_inode(inodeAddr, inode_metadata, userdata.SymmKey)
 		if err != nil {
 			return 
 		}
@@ -487,7 +491,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	if inode_r_e == nil || ok == false {
 		return errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_e, userdata.Privkey)
+	inode, err := verify_and_get_inode(inodeAddr, inode_r_e, userdata.SymmKey)
 	if err != nil {
 		return err
 	}
@@ -535,7 +539,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	if inode_r_b == nil || ok == false {
 		return nil, errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
+	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.SymmKey)
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +604,7 @@ func (userdata *User) ShareFile(filename string, recipient string) ( msgid strin
 	if inode_r_b == nil || ok == false {
 		return "", errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
+	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.SymmKey)
 	if err != nil {
 		return "", err
 	}
@@ -675,24 +679,11 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	inode := Inode{ 
 		ShRecordAddr : message.ShRecordAddr,
 		SymmKey : message.SymmKey }
-	inode_b, err := json.Marshal(inode)
+
+	err = push_inode(inodeAddr, inode, userdata.SymmKey )
 	if err != nil {
 		return err
 	}
-	inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
-	if err != nil { 
-		return err
-	}
-	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
-	if err != nil {
-		return err
-	}
-	inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
-	inode_r_b, err := json.Marshal(inode_r)
-	if err != nil {
-		return err
-	}
-	userlib.DatastoreSet(inodeAddr, inode_r_b)
 
 	return nil
 }
@@ -709,7 +700,7 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	if inode_r_b == nil || ok == false {
 		return errors.New("File not found")
 	}
-	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.Privkey)
+	inode, err := verify_and_get_inode(inodeAddr, inode_r_b, userdata.SymmKey)
 	if err != nil {
 		return err
 	}
@@ -768,24 +759,10 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	// changing and updating Inode
 	inode.ShRecordAddr = sr_addr
 	inode.SymmKey = sr_key
-	inode_b, err := json.Marshal(inode)
-	if err != nil { 
-		return err
-	}
-	inode_b_e, err := userlib.RSAEncrypt( &userdata.Privkey.PublicKey, inode_b , []byte("Tag") )
+	err = push_inode(inodeAddr, *inode, userdata.SymmKey )
 	if err != nil {
-		return err
-	}
-	sign, err := userlib.RSASign(userdata.Privkey, inode_b_e)
-	if err != nil {
-		return err
-	}
-	inode_r := Inode_r{KeyAddr : inodeAddr, Signature : sign , Inode : inode_b_e }
-	inode_r_b, err = json.Marshal(inode_r)
-	if err != nil {
-		return err
-	}
-	userlib.DatastoreSet(inodeAddr, inode_r_b)
+			return 
+	}	
 
 	return nil
 }
