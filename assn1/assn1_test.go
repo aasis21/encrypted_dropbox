@@ -11,7 +11,7 @@ import "reflect"
 func TestInit(t *testing.T) {
 	t.Log("Initialization test")
 	userlib.DebugPrint = true
-//	someUsefulThings()
+	//	someUsefulThings()
 
 	userlib.DebugPrint = false
 	u, err := InitUser("alice", "fubar")
