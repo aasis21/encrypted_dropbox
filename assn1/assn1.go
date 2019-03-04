@@ -81,7 +81,7 @@ type Data_r struct {
 
 
 
-// Return HMAC signature of the given (key,data) pair.
+// Return Double SHA256 hash of the given data byte.
 func hash(data []byte) []byte {
 	mac := userlib.NewSHA256()
 	mac.Write(data)
