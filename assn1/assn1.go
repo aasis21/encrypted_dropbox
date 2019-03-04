@@ -79,6 +79,20 @@ type Data_r struct {
 
 // Helper functions : Start
 
+
+
+// Return HMAC signature of the given (key,data) pair.
+func hash(data []byte) []byte {
+	mac := userlib.NewSHA256()
+	mac.Write(data)
+	hash_ := mac.Sum(nil)
+
+	mac2 := userlib.NewSHA256()
+	mac2.Write(hash_)
+	hash := mac2.Sum(nil)
+	return hash
+}
+
 // Verify HMAC signature of the given (key,data) pair.
 func verifySign(sign []byte, data []byte, key []byte) bool {
 	mac := userlib.NewHMAC(key)
@@ -403,10 +417,7 @@ func (userdata *User) storeNewFile(inodeAddr string, filename string, data []byt
 // Init and store a new file if file not exists
 // Overwrite the data if file exists from before
 func (userdata *User) StoreFile(filename string, data []byte) {
-	inodeAddr := hex.EncodeToString(userlib.Argon2Key(
-		[]byte(userdata.Password+filename),
-		[]byte(userdata.Username+filename),
-		16))
+	inodeAddr := hex.EncodeToString(hash([]byte(userdata.Password+filename)))
 
 	// There are two case : File exist or Not exists
 	inodeMetadata, ok := userlib.DatastoreGet(inodeAddr)
@@ -456,10 +467,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// Append new data and update metadata accordingly
 
 	// verify and get inode
-	inodeAddr := hex.EncodeToString(userlib.Argon2Key(
-		[]byte(userdata.Password+filename),
-		[]byte(userdata.Username+filename),
-		16))
+	inodeAddr := hex.EncodeToString(hash([]byte(userdata.Password+filename)))
 	inodeEncrypt, ok := userlib.DatastoreGet(inodeAddr)
 	if inodeEncrypt == nil || ok == false {
 		return errors.New("File not found")
@@ -504,10 +512,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// Loads and return whole data if case of passing integrity check
 
 	// verify and get inode
-	inodeAddr := hex.EncodeToString(userlib.Argon2Key(
-		[]byte(userdata.Password+filename),
-		[]byte(userdata.Username+filename),
-		16))
+	inodeAddr := hex.EncodeToString(hash([]byte(userdata.Password+filename)))
 	inodeBytes, ok := userlib.DatastoreGet(inodeAddr)
 	if ok == false {
 		return nil, nil
@@ -568,10 +573,7 @@ type Message struct {
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
 
 	// Get inode data for file to be shared along verification of inode data
-	inodeAddr := hex.EncodeToString(userlib.Argon2Key(
-		[]byte(userdata.Password+filename),
-		[]byte(userdata.Username+filename),
-		16))
+	inodeAddr := hex.EncodeToString(hash([]byte(userdata.Password+filename)))
 
 	inodeBytes, ok := userlib.DatastoreGet(inodeAddr)
 	if inodeBytes == nil || ok == false {
@@ -646,10 +648,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	}
 
 	// create new inode and link to same file SharingRecord:
-	inodeAddr := hex.EncodeToString(userlib.Argon2Key(
-		[]byte(userdata.Password+filename),
-		[]byte(userdata.Username+filename),
-		16))
+	inodeAddr := hex.EncodeToString(hash([]byte(userdata.Password+filename)))
 	inode := Inode{
 		ShRecordAddr: message.ShRecordAddr,
 		SymmKey:      message.SymmKey}
@@ -666,10 +665,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 func (userdata *User) RevokeFile(filename string) (err error) {
 
 	// verify and get inode
-	inodeAddr := hex.EncodeToString(userlib.Argon2Key(
-		[]byte(userdata.Password+filename),
-		[]byte(userdata.Username+filename),
-		16))
+	inodeAddr := hex.EncodeToString(hash([]byte(userdata.Password+filename)))
 	inodeBytes, ok := userlib.DatastoreGet(inodeAddr)
 	if inodeBytes == nil || ok == false {
 		return errors.New("File not found")
