@@ -164,6 +164,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 	// decrypt, check sign and address_key(swap attack) and get the user Struct
 	// returns error in case of any tampering
+	if len(userEncrypt) < BlockSize{
+		return nil, errors.New("Sign Failed, less than blocksize")
+	}
 	cipher := userlib.CFBDecrypter(userKey, userEncrypt[:BlockSize])
 	cipher.XORKeyStream(userEncrypt[BlockSize:], userEncrypt[BlockSize:])
 	var user_r User_r
@@ -194,6 +197,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func verifyAndGetInode(inodeAddr string, inodeEncrypt []byte, inodeKey []byte) (inode *Inode, err error) {
 
 	// decrypt, check swap attack and check sign
+	if len(inodeEncrypt) < BlockSize{
+		return nil, errors.New("Sign Failed, less than blocksize")
+	}
 	cipher := userlib.CFBDecrypter(inodeKey, inodeEncrypt[:BlockSize])
 	cipher.XORKeyStream(inodeEncrypt[BlockSize:], inodeEncrypt[BlockSize:])
 	var inode_r Inode_r
@@ -222,6 +228,9 @@ func verifyAndGetInode(inodeAddr string, inodeEncrypt []byte, inodeKey []byte) (
 func verifyAndGetSharingRecord(sharingRecordAddr string, srEncrypt []byte, srKey []byte) (sr *SharingRecord, err error) {
 
 	// decrypt, check swap attack and check sign
+	if len(srEncrypt) < BlockSize{
+		return nil, errors.New("Sign Failed, less than blocksize")
+	}
 	cipher := userlib.CFBDecrypter(srKey, srEncrypt[:BlockSize])
 	cipher.XORKeyStream(srEncrypt[BlockSize:], srEncrypt[BlockSize:])
 	var sr_r SharingRecord_r
@@ -250,6 +259,9 @@ func verifyAndGetSharingRecord(sharingRecordAddr string, srEncrypt []byte, srKey
 func verifyAndGetData(dataAddr string, dataEncrypt []byte, dataKey []byte) (data *[]byte, err error) {
 
 	// decrypt, check swap attack and check sign
+	if len(dataEncrypt) < BlockSize{
+		return nil, errors.New("Sign Failed, less than blocksize")
+	}
 	cipher := userlib.CFBDecrypter(dataKey, dataEncrypt[:BlockSize])
 	cipher.XORKeyStream(dataEncrypt[BlockSize:], dataEncrypt[BlockSize:])
 	var data_r Data_r
@@ -488,7 +500,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		16))
 	inodeBytes, ok := userlib.DatastoreGet(inodeAddr)
 	if inodeBytes == nil || ok == false {
-		return nil, errors.New("File not found")
+		return nil, nil
 	}
 	inode, err := verifyAndGetInode(inodeAddr, inodeBytes, userdata.SymmKey)
 	if err != nil {
