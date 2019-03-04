@@ -349,7 +349,56 @@ func pushData(dataAddr string, data []byte, dataKey []byte) (err error) {
 
 }
 
+// Init and store a new sharing Record and data
+func storeNewSharingRecord(inode Inode, data []byte) (err error) {
+	// Setting up the SHARING RECORD
+	random_for_data := userlib.RandomBytes(48)
+	dataAddr := hex.EncodeToString(random_for_data[:16])
+	dataKey := random_for_data[32:]
+
+	sr := SharingRecord{
+		Address: []string{dataAddr},
+		SymmKey: [][]byte{dataKey}}
+
+	err = pushSharingRecord(inode.ShRecordAddr, sr, inode.SymmKey)
+	if err != nil {
+		return err
+	}
+
+	// Setting up the DATA
+	err = pushData(dataAddr, data, dataKey)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Init and store a new file
+func (userdata *User) storeNewFile(inodeAddr string, filename string, data []byte) (err error) {
+	// Setting up the INODE
+	random := userlib.RandomBytes(48)
+	inode := Inode{
+		ShRecordAddr: hex.EncodeToString(random[:32]),
+		SymmKey:      random[32:]}
+
+	err = pushInode(inodeAddr, inode, userdata.SymmKey)
+	if err != nil {
+		return err
+	}
+
+	// Setting up the SHARING RECORD and data
+	err = storeNewSharingRecord(inode, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 // Helper function : End
+
 
 // Init and store a new file if file not exists
 // Overwrite the data if file exists from before
@@ -360,55 +409,31 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		16))
 
 	// There are two case : File exist or Not exists
-	inode_metadata, ok := userlib.DatastoreGet(inodeAddr)
-	if inode_metadata == nil || ok == false {
+	inodeMetadata, ok := userlib.DatastoreGet(inodeAddr)
+	if inodeMetadata == nil || ok == false {
 		// CASE 1 : File does not exist
-
-		// Setting up the INODE
-		random := userlib.RandomBytes(48)
-		inode := Inode{
-			ShRecordAddr: hex.EncodeToString(random[:32]),
-			SymmKey:      random[32:]}
-
-		err := pushInode(inodeAddr, inode, userdata.SymmKey)
-		if err != nil {
-			return
-		}
-
-		// Setting up the SHARING RECORD
-		random_for_data := userlib.RandomBytes(48)
-		dataAddr := hex.EncodeToString(random_for_data[:16])
-		dataKey := random_for_data[32:]
-
-		sr := SharingRecord{
-			Address: []string{dataAddr},
-			SymmKey: [][]byte{dataKey}}
-
-		err = pushSharingRecord(inode.ShRecordAddr, sr, inode.SymmKey)
-		if err != nil {
-			return
-		}
-
-		// Setting up the DATA
-		err = pushData(dataAddr, data, dataKey)
-		if err != nil {
-			return
-		}
-
+		userdata.storeNewFile(inodeAddr, filename, data)
+		return
+		
 	} else {
 		// CASE 2 : File exists
 
 		// Get inode, sharingRecord, verify integrity, abort if integrity fails
-		inode, err := verifyAndGetInode(inodeAddr, inode_metadata, userdata.SymmKey)
+		inode, err := verifyAndGetInode(inodeAddr, inodeMetadata, userdata.SymmKey)
 		if err != nil {
+			userdata.storeNewFile(inodeAddr, filename, data)
 			return
 		}
 		srEncrypt, ok := userlib.DatastoreGet(inode.ShRecordAddr)
 		if srEncrypt == nil || ok == false {
+			// Setting up the new SHARING RECORD and data
+			storeNewSharingRecord(*inode, data)
 			return
 		}
 		sr, err := verifyAndGetSharingRecord(inode.ShRecordAddr, srEncrypt, inode.SymmKey)
 		if err != nil {
+			// Setting up the new SHARING RECORD and data
+			storeNewSharingRecord(*inode, data)
 			return
 		}
 
@@ -418,25 +443,10 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 			userlib.DatastoreDelete(addresses[i])
 		}
 
-		// Setting up updated Sharing Record and new data
-		random_for_data := userlib.RandomBytes(48)
-		dataAddr := hex.EncodeToString(random_for_data[:16])
-		dataKey := random_for_data[32:]
-
-		sr.Address = []string{dataAddr}
-		sr.SymmKey = [][]byte{dataKey}
-		err = pushSharingRecord(inode.ShRecordAddr, *sr, inode.SymmKey)
-		if err != nil {
-			return
-		}
-		err = pushData(dataAddr, data, dataKey)
-		if err != nil {
-			return
-		}
-
+		// Setting up the new SHARING RECORD and data
+		storeNewSharingRecord(*inode, data)
+		return
 	}
-
-	return
 
 }
 
