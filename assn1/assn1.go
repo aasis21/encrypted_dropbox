@@ -143,7 +143,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	user := User{Username: username, Password: password, SymmKey: symmKey, Privkey: privkey}
 
 	// get the address where user data to be saved, and the symKey for encryption
-	userKey := userlib.Argon2Key([]byte(username+password), []byte(username), 16)
+	userKey := userlib.Argon2Key([]byte(password+username), []byte(username), 16)
 	userAddr := hex.EncodeToString(userlib.Argon2Key([]byte(username+password), []byte(username), 32))
 
 	// sign, encrypt, store the data in appropriate format on datastore
@@ -167,7 +167,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 func GetUser(username string, password string) (userdataptr *User, err error) {
 
 	// get the datastore address of userdata , and the crypto symKey
-	userKey := userlib.Argon2Key([]byte(username+password), []byte(username), 16)
+	userKey := userlib.Argon2Key([]byte(password+username), []byte(username), 16)
 	userAddr := hex.EncodeToString(userlib.Argon2Key([]byte(username+password), []byte(username), 32))
 
 	//check whether the user data exists or not
