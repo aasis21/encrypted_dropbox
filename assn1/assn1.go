@@ -165,7 +165,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	// decrypt, check sign and address_key(swap attack) and get the user Struct
 	// returns error in case of any tampering
 	if len(userEncrypt) < BlockSize{
-		return nil, errors.New("Sign Failed, less than blocksize")
+		return nil, errors.New("Sign Failed, IV tampered")
 	}
 	cipher := userlib.CFBDecrypter(userKey, userEncrypt[:BlockSize])
 	cipher.XORKeyStream(userEncrypt[BlockSize:], userEncrypt[BlockSize:])
@@ -198,7 +198,7 @@ func verifyAndGetInode(inodeAddr string, inodeEncrypt []byte, inodeKey []byte) (
 
 	// decrypt, check swap attack and check sign
 	if len(inodeEncrypt) < BlockSize{
-		return nil, errors.New("Sign Failed, less than blocksize")
+		return nil, errors.New("Sign Failed, IV tampered")
 	}
 	cipher := userlib.CFBDecrypter(inodeKey, inodeEncrypt[:BlockSize])
 	cipher.XORKeyStream(inodeEncrypt[BlockSize:], inodeEncrypt[BlockSize:])
@@ -229,7 +229,7 @@ func verifyAndGetSharingRecord(sharingRecordAddr string, srEncrypt []byte, srKey
 
 	// decrypt, check swap attack and check sign
 	if len(srEncrypt) < BlockSize{
-		return nil, errors.New("Sign Failed, less than blocksize")
+		return nil, errors.New("Sign Failed, IV tampered")
 	}
 	cipher := userlib.CFBDecrypter(srKey, srEncrypt[:BlockSize])
 	cipher.XORKeyStream(srEncrypt[BlockSize:], srEncrypt[BlockSize:])
@@ -260,7 +260,7 @@ func verifyAndGetData(dataAddr string, dataEncrypt []byte, dataKey []byte) (data
 
 	// decrypt, check swap attack and check sign
 	if len(dataEncrypt) < BlockSize{
-		return nil, errors.New("Sign Failed, less than blocksize")
+		return nil, errors.New("Sign Failed, IV tampered")
 	}
 	cipher := userlib.CFBDecrypter(dataKey, dataEncrypt[:BlockSize])
 	cipher.XORKeyStream(dataEncrypt[BlockSize:], dataEncrypt[BlockSize:])
@@ -499,8 +499,11 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		[]byte(userdata.Username+filename),
 		16))
 	inodeBytes, ok := userlib.DatastoreGet(inodeAddr)
-	if inodeBytes == nil || ok == false {
+	if ok == false {
 		return nil, nil
+	}
+	if inodeBytes == nil {
+		return nil, errors.New("Integrity Failed")
 	}
 	inode, err := verifyAndGetInode(inodeAddr, inodeBytes, userdata.SymmKey)
 	if err != nil {
