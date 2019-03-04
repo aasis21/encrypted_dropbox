@@ -585,7 +585,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	if err != nil {
 		return "", err
 	}
-	sign, err := userlib.RSASign(userdata.Privkey, msgEncrypt)
+	sign, err := userlib.RSASign(userdata.Privkey, msgBytes)
 	if err != nil {
 		return "", err
 	}
@@ -616,15 +616,16 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	if ok == false {
 		return errors.New("Sender's Public key not found")
 	}
-	err = userlib.RSAVerify(&sendPubKey, message_r.Message, message_r.Signature)
-	if err != nil {
-		return err
-	}
 	msgEncrypt := message_r.Message
 	msgBytes, err := userlib.RSADecrypt(userdata.Privkey, msgEncrypt, []byte("Tag"))
 	if err != nil {
 		return err
 	}
+	err = userlib.RSAVerify(&sendPubKey, msgBytes, message_r.Signature)
+	if err != nil {
+		return err
+	}
+	
 	var message Message
 	err = json.Unmarshal(msgBytes, &message)
 	if err != nil {
