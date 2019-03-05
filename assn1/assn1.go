@@ -67,8 +67,8 @@ type SharingRecord_r struct {
 }
 
 type SharingRecord struct {
-	Address []string
-	SymmKey [][]byte
+	Addresses []string
+	SymmKey []byte
 }
 
 type Data_r struct {
@@ -366,13 +366,13 @@ func pushData(dataAddr string, data []byte, dataKey []byte) (err error) {
 // Init and store a new sharing Record and data
 func storeNewSharingRecord(inode Inode, data []byte) (err error) {
 	// Setting up the SHARING RECORD
-	random_for_data := userlib.RandomBytes(48)
+	random_for_data := userlib.RandomBytes(32)
 	dataAddr := hex.EncodeToString(random_for_data[:16])
-	dataKey := random_for_data[32:]
+	dataKey := random_for_data[16:]
 
 	sr := SharingRecord{
-		Address: []string{dataAddr},
-		SymmKey: [][]byte{dataKey}}
+		Addresses: []string{dataAddr},
+		SymmKey: dataKey }
 
 	err = pushSharingRecord(inode.ShRecordAddr, sr, inode.SymmKey)
 	if err != nil {
@@ -391,10 +391,10 @@ func storeNewSharingRecord(inode Inode, data []byte) (err error) {
 // Init and store a new file
 func (userdata *User) storeNewFile(inodeAddr string, filename string, data []byte) (err error) {
 	// Setting up the INODE
-	random := userlib.RandomBytes(48)
+	random := userlib.RandomBytes(32)
 	inode := Inode{
-		ShRecordAddr: hex.EncodeToString(random[:32]),
-		SymmKey:      random[32:]}
+		ShRecordAddr: hex.EncodeToString(random[:16]),
+		SymmKey:      random[16:]}
 
 	err = pushInode(inodeAddr, inode, userdata.SymmKey)
 	if err != nil {
@@ -449,7 +449,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		}
 
 		// Deleting the previous data
-		addresses := sr.Address
+		addresses := sr.Addresses
 		for i := 0; i < len(addresses); i++ {
 			userlib.DatastoreDelete(addresses[i])
 		}
@@ -487,11 +487,9 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		return err
 	}
 
-	random_for_data := userlib.RandomBytes(48)
-	dataAddr := hex.EncodeToString(random_for_data[:16])
-	dataKey := random_for_data[32:]
-	sr.Address = append(sr.Address, dataAddr)
-	sr.SymmKey = append(sr.SymmKey, dataKey)
+	dataAddr := hex.EncodeToString(userlib.RandomBytes(16))
+	sr.Addresses = append(sr.Addresses, dataAddr)
+	dataKey := sr.SymmKey
 	err = pushSharingRecord(inode.ShRecordAddr, *sr, inode.SymmKey)
 	if err != nil {
 		return errors.New("Failed")
@@ -536,18 +534,15 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	}
 
 	// verify and get Data
-	addresses := sr.Address
-	symmKeys := sr.SymmKey
-	if len(addresses) != len(symmKeys) {
-		return nil, errors.New("Length Integrity Failed")
-	}
+	addresses := sr.Addresses
+	symmKey := sr.SymmKey
 	var total_data []byte
 	for i := 0; i < len(addresses); i++ {
 		dataEncrypt, ok := userlib.DatastoreGet(addresses[i])
 		if dataEncrypt == nil || ok == false {
 			return nil, errors.New("data null Integrity Failed")
 		}
-		dataChunk, err := verifyAndGetData(addresses[i], dataEncrypt, symmKeys[i])
+		dataChunk, err := verifyAndGetData(addresses[i], dataEncrypt, symmKey)
 		if err != nil {
 			return nil, err
 		}
@@ -686,29 +681,23 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	}
 
 	// relocating and re encrypting whole data
-	addresses := sr.Address
-	symmKeys := sr.SymmKey
-	if len(addresses) != len(symmKeys) {
-		return errors.New("Length Integrity Failed")
-	}
-
-	new_sr := SharingRecord{Address: []string{}, SymmKey: [][]byte{}}
+	addresses := sr.Addresses
+	symmKey := sr.SymmKey
+	newSymmKey := userlib.RandomBytes(16)
+	new_sr := SharingRecord{Addresses: []string{}, SymmKey: newSymmKey }
 	for i := 0; i < len(addresses); i++ {
 		dataEncrypt, ok := userlib.DatastoreGet(addresses[i])
 		if dataEncrypt == nil || ok == false {
 			return errors.New("data null Integrity Failed")
 		}
-		dataChunk, err := verifyAndGetData(addresses[i], dataEncrypt, symmKeys[i])
+		dataChunk, err := verifyAndGetData(addresses[i], dataEncrypt, symmKey)
 		if err != nil {
 			return err
 		}
 
-		random_for_data := userlib.RandomBytes(48)
-		dataAddr := hex.EncodeToString(random_for_data[:16])
-		dataKey := random_for_data[32:]
-		new_sr.Address = append(new_sr.Address, dataAddr)
-		new_sr.SymmKey = append(new_sr.SymmKey, dataKey)
-		err = pushData(dataAddr, *dataChunk, dataKey)
+		dataAddr := hex.EncodeToString(userlib.RandomBytes(16))
+		new_sr.Addresses = append(new_sr.Addresses, dataAddr)
+		err = pushData(dataAddr, *dataChunk, newSymmKey)
 		if err != nil {
 			return errors.New("Data PUSH Failed")
 		}
@@ -716,9 +705,9 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 	}
 
 	// relocating and re encrypting sharing record
-	random_for_sr := userlib.RandomBytes(48)
+	random_for_sr := userlib.RandomBytes(32)
 	srAddr := hex.EncodeToString(random_for_sr[:16])
-	srKey := random_for_sr[32:]
+	srKey := random_for_sr[16:]
 
 	err = pushSharingRecord(srAddr, new_sr, srKey)
 	if err != nil {

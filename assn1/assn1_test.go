@@ -3,6 +3,7 @@ package assn1
 import "github.com/fenilfadadu/CS628-assn1/userlib"
 import "testing"
 import "reflect"
+import "time"
 
 // You can actually import other stuff if you want IN YOUR TEST
 // HARNESS ONLY.  Note that this is NOT considered part of your
@@ -80,4 +81,17 @@ func TestShare(t *testing.T) {
 		t.Error("Shared file is not the same", v, v2)
 	}
 
+}
+
+
+func TestAppend(t *testing.T){
+	u, _ := GetUser("alice", "fubar")
+	v := []byte("This is a test")
+	u.StoreFile("file1", v)
+	for i:=0;i<1000;i++{
+		start := time.Now()
+		u.AppendFile("file1",v)
+		end := time.Now()
+		t.Log("append: ", (end.Sub(start)).Nanoseconds())
+	}
 }
