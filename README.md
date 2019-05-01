@@ -44,3 +44,7 @@ The design and report of the application can be found [here](docs/report.pdf).
 
 ## Result
 Our design and code passed all the test case(around 100 test cases) while evaluation of the assignment. Those test case have not been released by instructor. 
+
+## Team
+ - [Ashish Kumar](https://github.com/aasis21)
+ - [Aniket pandey](https://github.com/aniketp)
